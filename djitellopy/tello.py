@@ -110,6 +110,7 @@ class Tello:
         if not threads_initialized:
             # Run Tello command responses UDP receiver on background
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            client_socket.bind(('', Tello.CONTROL_UDP_PORT))
             response_receiver_thread = Thread(target=Tello.udp_response_receiver)
             response_receiver_thread.daemon = True
             response_receiver_thread.start()
@@ -215,6 +216,7 @@ class Tello:
                     continue
 
             state_dict[key] = value
+        state_dict['timestamp'] = time.time()
 
         return state_dict
 
@@ -499,6 +501,10 @@ class Tello:
         Internal method, you normally wouldn't call this yourself.
         """
         response = self.send_read_command(command)
+        """Added handling of an out of sync ok response in place of int"""
+        if(response == "ok"):
+            self.LOGGER.error('Tello returned ok, but a flaot was expected. Try calling the command again.')
+            return None
         return int(response)
 
     def send_read_command_float(self, command: str) -> float:
@@ -507,6 +513,10 @@ class Tello:
         Internal method, you normally wouldn't call this yourself.
         """
         response = self.send_read_command(command)
+        """Added handling of an out of sync ok response in place of float"""
+        if(response == "ok"):
+            self.LOGGER.error('Tello returned ok, but a flaot was expected. Try calling the command again.')
+            return None
         return float(response)
 
     def raise_result_error(self, command: str, response: str) -> bool:
@@ -575,7 +585,6 @@ class Tello:
         when your computer is connected to Tello-XXXXXX WiFi ntwork).
         Currently Tello EDUs do not support video streaming while connected
         to a WiFi-network.
-
         !!! Note:
             If the response is 'Unknown command' you have to update the Tello
             firmware. This can be done using the official Tello app.
@@ -702,12 +711,10 @@ class Tello:
 
     def curve_xyz_speed(self, x1: int, y1: int, z1: int, x2: int, y2: int, z2: int, speed: int):
         """Fly to x2 y2 z2 in a curve via x2 y2 z2. Speed defines the traveling speed in cm/s.
-
         - Both points are relative to the current position
         - The current position and both points must form a circle arc.
         - If the arc radius is not within the range of 0.5-10 meters, it raises an Exception
         - x1/x2, y1/y2, z1/z2 can't both be between -20-20 at the same time, but can both be 0.
-
         Arguments:
             x1: -500-500
             x2: -500-500
@@ -735,12 +742,10 @@ class Tello:
 
     def curve_xyz_speed_mid(self, x1: int, y1: int, z1: int, x2: int, y2: int, z2: int, speed: int, mid: int):
         """Fly to x2 y2 z2 in a curve via x2 y2 z2. Speed defines the traveling speed in cm/s.
-
         - Both points are relative to the mission pad with id mid.
         - The current position and both points must form a circle arc.
         - If the arc radius is not within the range of 0.5-10 meters, it raises an Exception
         - x1/x2, y1/y2, z1/z2 can't both be between -20-20 at the same time, but can both be 0.
-
         Arguments:
             x1: -500-500
             y1: -500-500
@@ -900,7 +905,11 @@ class Tello:
         Returns:
             int: 1-100
         """
-        return self.send_read_command_int('speed?')
+        """fix tello bug retuning 100.0 when stationary"""
+        speed = self.send_read_command_float('speed?')
+        if(speed == 100.0):
+            return 0
+        return speed
 
     def query_battery(self) -> int:
         """Get current battery percentage via a query command
